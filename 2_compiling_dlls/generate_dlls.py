@@ -186,6 +186,9 @@ if __name__ == "__main__":
     # Iterate over all DLLs that have entry point information
     print("Compiling DLLs...")
     for dll_name, entry_points in tqdm.tqdm(dll_to_entrypoint.items()):
+        # If dll not present in our mapping, there is no point in compiling it
+        if not dll_name in dll_process_mapping:
+            continue
         # Compile DLL
         if compile_dll(dll_name, entry_points):
             # If successful, add to list
