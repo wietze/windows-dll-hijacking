@@ -103,6 +103,10 @@ VOID generate_fingerprint(const char* f) {
     dll_def_path = "{}.def".format(dll_path)
     dll_c_path = "{}.c".format(dll_path)
 
+    dll_folder = os.path.dirname(dll_path)
+    if not os.path.exists(dll_folder):
+        os.mkdir(dll_folder)
+
     with open(dll_def_path, 'w') as dll_def:
         with open(dll_c_path, 'w') as dll_c:
             # Write header to C code and DEF file
