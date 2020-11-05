@@ -1,6 +1,12 @@
 #!/usr/python3
 
 def generate_pmc_file(target):
+    """
+    Generate a pmc file.
+
+    Args:
+        target: (str): write your description
+    """
     with open('procmon_template.pmc', 'rb') as f:
         data = f.read()
 

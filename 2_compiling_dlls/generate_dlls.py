@@ -12,6 +12,12 @@ import tqdm
 
 
 def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
+    """
+    Parse all the csv files. csv.
+
+    Args:
+        csv_folder: (str): write your description
+    """
     print('Parsing CSV data...')
     results = {}
     # Generate (process -> dll) mapping
@@ -35,6 +41,12 @@ def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
 
 
 def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
+    """
+    Get all available libraries.
+
+    Args:
+        filename: (str): write your description
+    """
     # Input: Nirsoft DLL Viewer export
     print('Parsing DLL Export information...')
     dllviewer_format = r"""==================================================\nFunction Name\s+: (.*?)\nAddress\s+: (.*?)\nRelative Address\s+: .*?\nOrdinal\s+: (\d+)\s*\(.*?\nFilename\s+: (.*?)\nFull Path\s+: .*?\nType\s+: Exported Function\n=================================================="""
@@ -54,6 +66,13 @@ def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
 
 
 def compile_dll(dll_name: str, entry_points: List[str]) -> bool:
+    """
+    Compile the cwd.
+
+    Args:
+        dll_name: (str): write your description
+        entry_points: (str): write your description
+    """
     dll_functions = '''BOOL IsElevated() {
     BOOL fRet = FALSE;
     HANDLE hToken = NULL;
@@ -129,6 +148,13 @@ VOID generate_fingerprint(const char* f) {
 
 
 def generate_ps1_file(dll_process_mapping: Dict[str, List[str]], ps1_file: str) -> None:
+    """
+    Generate ps1 ps1 file.
+
+    Args:
+        dll_process_mapping: (dict): write your description
+        ps1_file: (str): write your description
+    """
     print('Generating {}...'.format(ps1_file))
 
     ps1_dictionary = "$items = @{" + (';'.join(['{}=("{}")'.format(dll.replace('.', '___'), '","'.join(executables)) for dll, executables in dll_process_mapping.items()])) + '}'
