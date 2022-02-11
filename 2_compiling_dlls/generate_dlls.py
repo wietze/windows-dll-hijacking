@@ -15,7 +15,11 @@ def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
     print('Parsing CSV data...')
     results = {}
     # Generate (process -> dll) mapping
-    for file_name in sorted(glob.glob(csv_folder)):
+    csvs = sorted(glob.glob(csv_folder))
+    if len(csvs) == 0:
+        raise FileNotFoundError("Could not find .csv files in:\n{}".format(os.path.abspath(csv_folder)))
+
+    for file_name in csvs:
         with open(file_name) as f:
             loaded_dlls = csv.reader(f)
             for loaded_dll in loaded_dlls:
@@ -24,6 +28,9 @@ def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
                     dll_path = loaded_dll[4].split('\\')[-1].lower()
                     process_name = file_name[:-4].lower()
                     results[process_name] = results.get(process_name, []) + [dll_path]
+
+    if len(results) == 0:
+        raise Exception("Did not find any DLL Hijacking candidates in the CSV files supplied; check whether the CSVs were generated correctly")
 
     # Generate (dll -> processes) mapping
     dlls = {}
@@ -40,8 +47,11 @@ def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
     dllviewer_format = r"""==================================================\nFunction Name\s+: (.*?)\nAddress\s+: (.*?)\nRelative Address\s+: .*?\nOrdinal\s+: (\d+)\s*\(.*?\nFilename\s+: (.*?)\nFull Path\s+: .*?\nType\s+: Exported Function\n=================================================="""
 
     # Open Nirsoft generated file
-    with open(filename) as f:
-        data = f.read()
+    if os.path.exists(filename):
+        with open(filename) as f:
+            data = f.read()
+    else:
+        raise Exception("NirSoft DLL Viewer export file not found; expected location:\n{}".format(os.path.abspath(filename)))
 
     # Parse data and create mapping
     mapping = {}
@@ -50,6 +60,9 @@ def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
             continue
         dll_name = dll.lower()
         mapping[dll_name] = mapping.get(dll_name, []) + [(entry_point, ordinal)]
+
+    if len(mapping) == 0:
+        raise Exception("No entry points found in:\n{}".format(os.path.abspath(filename)))
     return mapping
 
 
@@ -93,7 +106,6 @@ VOID generate_fingerprint(const char* f) {
     fptr = fopen(result, "wb");
     fwrite(result, strlen(result)+1, sizeof(TCHAR), fptr);
     fclose(fptr);
-    //WinExec(\"cmd.exe\", 1);
 }'''
     dll_c_header = "#include <windows.h>\n#include <lmcons.h>\n#include <stdio.h>\n"+dll_functions+"\nBOOL WINAPI DllMain(HINSTANCE hModule, DWORD fdwReason, LPVOID lpvReserved) {\n    static HANDLE hThread;\n\n    switch (fdwReason)\n    {\n        case DLL_PROCESS_ATTACH:\n        case DLL_PROCESS_DETACH:\n        case DLL_THREAD_ATTACH:\n        case DLL_THREAD_DETACH:\n            generate_fingerprint(__func__);\n            break;\n    }\n\n    return TRUE;\n}\n\n"
     dll_def_header = "LIBRARY MyDLLName\nEXPORTS\n"
@@ -132,7 +144,12 @@ def generate_ps1_file(dll_process_mapping: Dict[str, List[str]], ps1_file: str) 
     print('Generating {}...'.format(ps1_file))
 
     ps1_dictionary = "$items = @{" + (';'.join(['{}=("{}")'.format(dll.replace('.', '___'), '","'.join(executables)) for dll, executables in dll_process_mapping.items()])) + '}'
-    ps1_function = '''# Define our dir
+    ps1_function = '''
+if(!(Test-Path -Path .\\run_executable.vbs -PathType Leaf)){
+    throw "Could not find run_executable.vbs - make sure it is present in the same directory as this file."
+}
+
+# Define our dir
 $ExeDir = "\\\\?\\c:\\windows \\system32"
 # Create our dir
 mkdir $ExeDir
@@ -152,7 +169,7 @@ foreach ($item in $items.GetEnumerator()) {
         # Copy legitimate executable to our folder
         Copy-Item -Force ("c:\\windows\\system32\\{0}"-f$process) $ExeDir;
         # Run legitimate executable in our folder (PowerShell won't let you do this, hence the VBScript)
-        cscript runme.vbs ("{0}"-f$process);
+        cscript run_executable.vbs ("{0}"-f$process);
     }
     # Sleep to let processes do their DLL loads
     Start-Sleep 3;
