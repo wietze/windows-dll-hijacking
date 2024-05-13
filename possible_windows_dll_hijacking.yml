@@ -284,6 +284,7 @@ detection:
         ImageLoaded:
             - "C:\\Windows\\WinSxS\\*"
             - "C:\\Windows\\System32\\*"
+            - "C:\\Windows\\SysWOW64\\*"
     condition: selection and not filter
 falsepositives:
     - Very likely, needs more tuning
