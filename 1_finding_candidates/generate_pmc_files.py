@@ -1,6 +1,7 @@
 #!/usr/python3
 
 def generate_pmc_file(target):
+    # Generated using Procmon v3.96
     with open('procmon_template.pmc', 'rb') as f:
         data = f.read()
 
@@ -18,11 +19,9 @@ def generate_pmc_file(target):
     result = data.replace(original_enc, payload_enc)
 
     # Replace bytes containing lengths
-    result = result[:0x614] + (0x76 + payload_len).to_bytes(1, 'little') + result[0x615:]
-    result = result[:0x63E] + (0x02 + payload_len).to_bytes(1, 'little') + result[0x63F:]
-    result = result[:0x608] + (0x9E + payload_len).to_bytes(1, 'little') + result[0x609:]
-
-    result = result[:0x4f6] + (0x01).to_bytes(1, 'little') + result[0x4f7:]
+    result = result[:0x624] + (0x82 + payload_len).to_bytes(1, 'little') + result[0x625:]
+    result = result[:0x630] + (0x5A + payload_len).to_bytes(1, 'little') + result[0x631:]
+    result = result[:0x65A] + (0x02 + payload_len).to_bytes(1, 'little') + result[0x65B:]
 
     with open('{}.pmc'.format(target), 'wb') as w:
         w.write(result)
