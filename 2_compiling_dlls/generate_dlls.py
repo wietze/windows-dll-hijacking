@@ -8,14 +8,23 @@ import subprocess
 import sys
 from typing import Dict, List, Tuple
 
-import tqdm
+from tqdm.auto import tqdm
+
+IMAGE = "wietze/mingw-tools:2.0"
 
 
 def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
-    print('Parsing CSV data...')
+    print('[+] Parsing CSV data...')
     results = {}
     # Generate (process -> dll) mapping
-    for file_name in sorted(glob.glob(csv_folder)):
+    csv_files = sorted(glob.glob(csv_folder))
+
+    if not csv_files:
+        print("[!] ERROR: Did not find any CSV files in working directory;\n    Make sure you execute step 1 first (see README), and put the generated csv in the current working directory", file=sys.stderr)
+        sys.exit(-1)
+
+    for file_name in csv_files:
+        print(f"    Processing {file_name}")
         with open(file_name) as f:
             loaded_dlls = csv.reader(f)
             for loaded_dll in loaded_dlls:
@@ -23,7 +32,10 @@ def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
                 if any(['\\users\\' in entry.lower() for entry in loaded_dll]):
                     dll_path = loaded_dll[4].split('\\')[-1].lower()
                     process_name = file_name[:-4].lower()
-                    results[process_name] = results.get(process_name, []) + [dll_path]
+                    results[process_name] = results.get(
+                        process_name, []) + [dll_path]
+
+    print(f"    Found {len(results)} candidates")
 
     # Generate (dll -> processes) mapping
     dlls = {}
@@ -36,7 +48,7 @@ def get_loaded_dlls(csv_folder: str) -> Dict[str, List[str]]:
 
 def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
     # Input: Nirsoft DLL Viewer export
-    print('Parsing DLL Export information...')
+    print('[+] Parsing DLL Export information...')
     dllviewer_format = r"""==================================================\nFunction Name\s+: (.*?)\nAddress\s+: (.*?)\nRelative Address\s+: .*?\nOrdinal\s+: (\d+)\s*\(.*?\nFilename\s+: (.*?)\nFull Path\s+: .*?\nType\s+: Exported Function\n=================================================="""
 
     # Open Nirsoft generated file
@@ -49,7 +61,8 @@ def get_dll_exports(filename: str) -> Dict[str, Tuple[str, int]]:
         if '.' in address:
             continue
         dll_name = dll.lower()
-        mapping[dll_name] = mapping.get(dll_name, []) + [(entry_point, ordinal)]
+        mapping[dll_name] = mapping.get(
+            dll_name, []) + [(entry_point, ordinal)]
     return mapping
 
 
@@ -95,7 +108,8 @@ VOID generate_fingerprint(const char* f) {
     fclose(fptr);
     //WinExec(\"cmd.exe\", 1);
 }'''
-    dll_c_header = "#include <windows.h>\n#include <lmcons.h>\n#include <stdio.h>\n"+dll_functions+"\nBOOL WINAPI DllMain(HINSTANCE hModule, DWORD fdwReason, LPVOID lpvReserved) {\n    static HANDLE hThread;\n\n    switch (fdwReason)\n    {\n        case DLL_PROCESS_ATTACH:\n        case DLL_PROCESS_DETACH:\n        case DLL_THREAD_ATTACH:\n        case DLL_THREAD_DETACH:\n            generate_fingerprint(__func__);\n            break;\n    }\n\n    return TRUE;\n}\n\n"
+    dll_c_header = "#include <windows.h>\n#include <lmcons.h>\n#include <stdio.h>\n"+dll_functions + \
+        "\nBOOL WINAPI DllMain(HINSTANCE hModule, DWORD fdwReason, LPVOID lpvReserved) {\n    static HANDLE hThread;\n\n    switch (fdwReason)\n    {\n        case DLL_PROCESS_ATTACH:\n        case DLL_PROCESS_DETACH:\n        case DLL_THREAD_ATTACH:\n        case DLL_THREAD_DETACH:\n            generate_fingerprint(__func__);\n            break;\n    }\n\n    return TRUE;\n}\n\n"
     dll_def_header = "LIBRARY MyDLLName\nEXPORTS\n"
     dll_c_entry = "VOID *{}(){{ generate_fingerprint(__func__); }}\n"
 
@@ -122,16 +136,17 @@ VOID generate_fingerprint(const char* f) {
                 dll_def.write("{}\t@{}\n".format(entry_point, ordinal))
 
     # Compile DLL using docker call
-    if subprocess.call(["docker", "run", "--rm", "-ti", "-v", "{}:/mnt".format(os.getcwd()), "mmozeiko/mingw-w64", "x86_64-w64-mingw32-gcc", "-shared", "-mwindows", "-o", dll_path, dll_c_path, dll_def_path], stdout=subprocess.DEVNULL):
-        print('Could not compile {}'.format(dll_name), file=sys.stderr)
+    if subprocess.call(["docker", "run", "--rm", "-ti", "-v", "{}:/mnt".format(os.getcwd()), IMAGE, "x86_64-w64-mingw32-gcc", "-shared", "-mwindows", "-o", dll_path, dll_c_path, dll_def_path], stdout=subprocess.DEVNULL):
+        tqdm.write('[X] Could not compile {}'.format(dll_name), file=sys.stderr)
         return False
     return True
 
 
 def generate_ps1_file(dll_process_mapping: Dict[str, List[str]], ps1_file: str) -> None:
-    print('Generating {}...'.format(ps1_file))
+    print('[+] Generating {}...'.format(ps1_file))
 
-    ps1_dictionary = "$items = @{" + (';'.join(['{}=("{}")'.format(dll.replace('.', '___'), '","'.join(executables)) for dll, executables in dll_process_mapping.items()])) + '}'
+    ps1_dictionary = "$items = @{" + (';'.join(['{}=("{}")'.format(dll.replace('.', '___'), '","'.join(
+        executables)) for dll, executables in dll_process_mapping.items()])) + '}'
     ps1_function = '''# Define our dir
 $ExeDir = "\\\\?\\c:\\windows \\system32"
 # Create our dir
@@ -152,7 +167,7 @@ foreach ($item in $items.GetEnumerator()) {
         # Copy legitimate executable to our folder
         Copy-Item -Force ("c:\\windows\\system32\\{0}"-f$process) $ExeDir;
         # Run legitimate executable in our folder (PowerShell won't let you do this, hence the VBScript)
-        cscript runme.vbs ("{0}"-f$process);
+        cscript generate_executable.vbs ("{0}"-f$process);
     }
     # Sleep to let processes do their DLL loads
     Start-Sleep 3;
@@ -179,17 +194,29 @@ Remove-Item -Recursive -Force $ExeDir'''
 
 
 if __name__ == "__main__":
+    if subprocess.call(['docker', '--version'], stdout=subprocess.DEVNULL) != 0:
+        print("[!] ERROR: Could not find Docker. Please make sure you have this installed.", file=sys.stderr)
+        sys.exit(-1)
+
+    if subprocess.call(['docker', 'inspect', '--type=image', IMAGE], stdout=subprocess.DEVNULL) != 0:
+        print("[+] Docker image not found, building now. This may take a while...", file=sys.stderr)
+        if subprocess.call(['docker', 'build', '-t', IMAGE, '.'], stdout=subprocess.DEVNULL) == 0:
+            print("[+] Docker image built successfully")
+        else:
+            print("[!] ERROR: Could not build Docker image. Refer to the README to build the image manually.", file=sys.stderr)
+
     # Get all DLLs and the processes they are loaded by
     loaded_dlls = get_loaded_dlls('*.csv')
-    dll_process_mapping = {dll: list(set([executable.split('/')[-1] for executable in executables])) for dll, executables in loaded_dlls.items()}
+    dll_process_mapping = {dll: list(set([executable.split(
+        '/')[-1] for executable in executables])) for dll, executables in loaded_dlls.items()}
     successful_dlls = {}
 
     # Get all DLLs with their entry points
     dll_to_entrypoint = get_dll_exports('entrypoints.txt')
 
     # Iterate over all DLLs that have entry point information
-    print("Compiling DLLs...")
-    for dll_name, entry_points in tqdm.tqdm(dll_to_entrypoint.items()):
+    print("[+] Compiling DLLs...")
+    for dll_name, entry_points in tqdm(dll_to_entrypoint.items()):
         # If dll not present in our mapping, there is no point in compiling it
         if not dll_name in dll_process_mapping:
             continue
